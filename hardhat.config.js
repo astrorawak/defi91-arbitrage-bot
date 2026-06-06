@@ -17,9 +17,10 @@ module.exports = {
       chainId: 8453,
     },
     base: {
-      url: process.env.BASE_RPC_URL || "https://mainnet.base.org",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      url: "https://mainnet.base.org",
+      accounts: ["0x8afd4ca004bc063d1fd556368ba3a97874efa38da94bec7086f4d4a4d733964c"],
       chainId: 8453,
+      gasPrice: "auto",
     },
   },
 };
