@@ -1,0 +1,23 @@
+# Environment
+.env
+*.env
+
+# Node modules
+node_modules/
+
+# Hardhat
+cache/
+artifacts/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+
+# Logs
+trades_log.json
+
+# OS
+.DS_Store
+Thumbs.db

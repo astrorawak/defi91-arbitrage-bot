@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeFi91 Arbitrage Engine | Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1f2937;
+            --accent: #10b981;
+            --accent-glow: rgba(16, 185, 129, 0.3);
+            --text-primary: #f9fafb;
+            --text-secondary: #9ca3af;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --border: #374151;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 40px 20px 30px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent), #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .header .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-top: 15px;
+        }
+
+        .status-badge.online {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+
+        .status-badge.offline {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+
+        .status-badge.dry_run {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-badge.online .status-dot { background: var(--accent); }
+        .status-badge.offline .status-dot { background: var(--danger); animation: none; }
+        .status-badge.dry_run .status-dot { background: var(--warning); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-card .label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .stat-card .value.profit { color: var(--accent); }
+        .stat-card .value.trades { color: var(--info); }
+        .stat-card .value.winrate { color: var(--warning); }
+
+        /* Charts Section */
+        .charts-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 900px) {
+            .charts-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .chart-card h3 {
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            font-size: 1.1rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 250px;
+        }
+
+        /* Recent Trades Table */
+        .trades-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 30px;
+        }
+
+        .trades-section h3 {
+            margin-bottom: 16px;
+            font-size: 1.1rem;
+        }
+
+        .trades-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .trades-table th {
+            text-align: left;
+            padding: 12px 8px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.5px;
+        }
+
+        .trades-table td {
+            padding: 12px 8px;
+            border-bottom: 1px solid rgba(55, 65, 81, 0.5);
+        }
+
+        .trades-table tr:hover {
+            background: rgba(16, 185, 129, 0.05);
+        }
+
+        .profit-positive { color: var(--accent); font-weight: 600; }
+        .profit-negative { color: var(--danger); font-weight: 600; }
+
+        .tx-link {
+            color: var(--info);
+            text-decoration: none;
+            font-family: monospace;
+            font-size: 0.8rem;
+        }
+
+        .tx-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        /* Loading State */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Network Info */
+        .network-info {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .network-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .network-tag .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state p {
+            margin-top: 8px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>DeFi91 Arbitrage Engine</h1>
+            <p class="subtitle">Atomic Backrunning Arbitrage Bot | Base Network</p>
+            <div id="status-badge" class="status-badge offline">
+                <span class="status-dot"></span>
+                <span id="status-text">Offline</span>
+            </div>
+            <div class="network-info">
+                <span class="network-tag"><span class="dot"></span> Base Mainnet (8453)</span>
+                <span class="network-tag">Uniswap V3 + Aerodrome</span>
+                <span class="network-tag" id="last-updated">Last update: --</span>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Total Profit (USD)</div>
+                <div class="value profit" id="total-profit">$0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Trades</div>
+                <div class="value trades" id="total-trades">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Win Rate</div>
+                <div class="value winrate" id="win-rate">0%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Successful / Failed</div>
+                <div class="value" id="success-fail" style="font-size:1.5rem;">
+                    <span style="color:var(--accent)">0</span> / <span style="color:var(--danger)">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-section">
+            <div class="chart-card">
+                <h3>Daily Profit (USD)</h3>
+                <div class="chart-container">
+                    <canvas id="profitChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3>Trade Distribution</h3>
+                <div class="chart-container">
+                    <canvas id="tradeChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="trades-section">
+            <h3>Recent Trades</h3>
+            <div id="trades-container">
+                <div class="empty-state">
+                    <p>No trades recorded yet. Bot will populate this when running.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>DeFi91 Arbitrage Engine v1.0 | Built by <strong>Karman</strong> | 
+            <a href="https://basescan.org" target="_blank">BaseScan</a></p>
+        </div>
+    </div>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <script>
+        // Dashboard Data Management
+        let dashboardData = null;
+        let profitChart = null;
+        let tradeChart = null;
+
+        // Load data from data.json
+        async function loadData() {
+            try {
+                const response = await fetch('data.json');
+                if (!response.ok) throw new Error('Data not found');
+                dashboardData = await response.json();
+                updateUI();
+            } catch (e) {
+                console.log('No data.json found, using empty state');
+                dashboardData = {
+                    last_updated: '',
+                    total_profit_usd: 0,
+                    total_trades: 0,
+                    successful_trades: 0,
+                    failed_trades: 0,
+                    win_rate: 0,
+                    daily_profits: [],
+                    recent_trades: [],
+                    bot_status: 'offline',
+                    uptime_start: ''
+                };
+                updateUI();
+            }
+        }
+
+        // Update all UI elements
+        function updateUI() {
+            if (!dashboardData) return;
+
+            // Status badge
+            const badge = document.getElementById('status-badge');
+            const statusText = document.getElementById('status-text');
+            badge.className = `status-badge ${dashboardData.bot_status}`;
+            
+            const statusLabels = {
+                'online': 'LIVE',
+                'offline': 'Offline',
+                'dry_run': 'Dry Run (Simulation)'
+            };
+            statusText.textContent = statusLabels[dashboardData.bot_status] || 'Unknown';
+
+            // Stats
+            document.getElementById('total-profit').textContent = 
+                `$${dashboardData.total_profit_usd.toFixed(4)}`;
+            document.getElementById('total-trades').textContent = 
+                dashboardData.total_trades;
+            document.getElementById('win-rate').textContent = 
+                `${dashboardData.win_rate.toFixed(1)}%`;
+            document.getElementById('success-fail').innerHTML = 
+                `<span style="color:var(--accent)">${dashboardData.successful_trades}</span> / ` +
+                `<span style="color:var(--danger)">${dashboardData.failed_trades}</span>`;
+
+            // Last updated
+            if (dashboardData.last_updated) {
+                const date = new Date(dashboardData.last_updated);
+                document.getElementById('last-updated').textContent = 
+                    `Last update: ${date.toLocaleString()}`;
+            }
+
+            // Charts
+            updateProfitChart();
+            updateTradeChart();
+
+            // Recent trades table
+            updateTradesTable();
+        }
+
+        // Profit Chart
+        function updateProfitChart() {
+            const ctx = document.getElementById('profitChart').getContext('2d');
+            const dailyProfits = dashboardData.daily_profits || [];
+
+            const labels = dailyProfits.map(d => d.date);
+            const data = dailyProfits.map(d => d.profit);
+
+            if (profitChart) profitChart.destroy();
+
+            profitChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels.length > 0 ? labels : ['No Data'],
+                    datasets: [{
+                        label: 'Daily Profit (USD)',
+                        data: data.length > 0 ? data : [0],
+                        backgroundColor: data.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)'),
+                        borderColor: data.map(v => v >= 0 ? '#10b981' : '#ef4444'),
+                        borderWidth: 1,
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(55, 65, 81, 0.3)' },
+                            ticks: { color: '#9ca3af' }
+                        },
+                        y: {
+                            grid: { color: 'rgba(55, 65, 81, 0.3)' },
+                            ticks: { color: '#9ca3af', callback: v => '$' + v.toFixed(2) }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Trade Distribution Chart
+        function updateTradeChart() {
+            const ctx = document.getElementById('tradeChart').getContext('2d');
+
+            if (tradeChart) tradeChart.destroy();
+
+            const success = dashboardData.successful_trades || 0;
+            const failed = dashboardData.failed_trades || 0;
+
+            tradeChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Successful', 'Failed'],
+                    datasets: [{
+                        data: [success || 1, failed || 0],
+                        backgroundColor: ['rgba(16, 185, 129, 0.8)', 'rgba(239, 68, 68, 0.8)'],
+                        borderColor: ['#10b981', '#ef4444'],
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#9ca3af' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Recent Trades Table
+        function updateTradesTable() {
+            const container = document.getElementById('trades-container');
+            const trades = dashboardData.recent_trades || [];
+
+            if (trades.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>No trades recorded yet. Bot will populate this when running.</p>
+                    </div>`;
+                return;
+            }
+
+            // Reverse to show newest first
+            const recentTrades = [...trades].reverse().slice(0, 20);
+
+            let html = `
+                <table class="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Pair</th>
+                            <th>Profit</th>
+                            <th>TX Hash</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+            for (const trade of recentTrades) {
+                const time = new Date(trade.timestamp).toLocaleString();
+                const profitClass = trade.profit >= 0 ? 'profit-positive' : 'profit-negative';
+                const profitSign = trade.profit >= 0 ? '+' : '';
+                const txShort = trade.tx_hash ? trade.tx_hash.substring(0, 14) + '...' : '--';
+                const txLink = trade.tx_hash && !trade.tx_hash.includes('DRY_RUN') 
+                    ? `https://basescan.org/tx/${trade.tx_hash}` 
+                    : '#';
+
+                html += `
+                    <tr>
+                        <td>${time}</td>
+                        <td>${trade.pair}</td>
+                        <td class="${profitClass}">${profitSign}$${trade.profit.toFixed(4)}</td>
+                        <td><a href="${txLink}" target="_blank" class="tx-link">${txShort}</a></td>
+                    </tr>`;
+            }
+
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        // Auto-refresh every 30 seconds
+        function startAutoRefresh() {
+            loadData();
+            setInterval(loadData, 30000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', startAutoRefresh);
+    </script>
+</body>
+</html>

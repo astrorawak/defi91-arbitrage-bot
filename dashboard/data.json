@@ -1,0 +1,12 @@
+{
+  "last_updated": "",
+  "total_profit_usd": 0.0,
+  "total_trades": 0,
+  "successful_trades": 0,
+  "failed_trades": 0,
+  "win_rate": 0.0,
+  "daily_profits": [],
+  "recent_trades": [],
+  "bot_status": "offline",
+  "uptime_start": ""
+}
