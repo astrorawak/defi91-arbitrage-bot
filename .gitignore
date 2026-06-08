@@ -5,6 +5,12 @@
 # Node modules
 node_modules/
 
+# Node/pnpm files (Hardhat only - not needed for Railway Python deployment)
+package.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+hardhat.config.js
+
 # Hardhat
 cache/
 artifacts/
@@ -17,6 +23,10 @@ venv/
 
 # Logs
 trades_log.json
+
+# Setup scripts
+setup_railway*.py
+.railway_config.json
 
 # OS
 .DS_Store
