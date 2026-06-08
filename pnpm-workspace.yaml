@@ -1,4 +1,2 @@
-allowBuilds:
-  esbuild: true
-  keccak: true
-  secp256k1: true
+packages:
+  - '.'
