@@ -68,7 +68,7 @@ class ArbitrageExecutor:
     """Executor untuk mengirim transaksi arbitrase ke smart contract."""
 
     def __init__(self, logger: ArbitrageLogger):
-        self.w3 = Web3(Web3.HTTPProvider(BASE_RPC_URL))
+        self.w3 = Web3(Web3.HTTPProvider(BASE_RPC_URL, request_kwargs={"timeout": 15}))
         self.logger = logger
         self.account = None
         self.contract = None

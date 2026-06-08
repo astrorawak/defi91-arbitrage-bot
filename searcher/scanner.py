@@ -1,10 +1,12 @@
 """
 DeFi91 Arbitrage Engine - Scanner
 Memantau harga real-time via multicall dan mendeteksi peluang arbitrase.
+Includes RPC fallback and retry logic to avoid 429 rate limiting.
 """
 
 import time
 import math
+import random
 from web3 import Web3
 from eth_abi import encode, decode
 
@@ -25,14 +27,61 @@ from config import (
 from logger import ArbitrageLogger
 
 
+# Multiple free RPC endpoints for Base Mainnet (fallback rotation)
+RPC_ENDPOINTS = [
+    BASE_RPC_URL,
+    "https://base.llamarpc.com",
+    "https://base-mainnet.public.blastapi.io",
+    "https://1rpc.io/base",
+    "https://base.meowrpc.com",
+    "https://base.drpc.org",
+]
+
+
 class ArbitrageScanner:
     """Scanner untuk mendeteksi peluang arbitrase antar DEX di Base Network."""
 
     def __init__(self, logger: ArbitrageLogger):
-        self.w3 = Web3(Web3.HTTPProvider(BASE_RPC_URL))
         self.logger = logger
-        self.pool_cache = {}  # Cache pool addresses
+        self.rpc_index = 0
+        self.w3 = self._create_web3(RPC_ENDPOINTS[0])
+        self.pool_cache = {}
+        self.consecutive_errors = 0
+        self.max_consecutive_errors = 5
         self._init_pools()
+
+    def _create_web3(self, rpc_url):
+        """Create Web3 instance with given RPC URL."""
+        return Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
+
+    def _rotate_rpc(self):
+        """Rotate to next RPC endpoint on error."""
+        self.rpc_index = (self.rpc_index + 1) % len(RPC_ENDPOINTS)
+        new_rpc = RPC_ENDPOINTS[self.rpc_index]
+        self.w3 = self._create_web3(new_rpc)
+        self.logger.log_status(f"[RPC] Rotated to: {new_rpc}")
+        return new_rpc
+
+    def _call_with_retry(self, func, max_retries=3):
+        """Execute a Web3 call with retry and RPC rotation on failure."""
+        for attempt in range(max_retries):
+            try:
+                result = func()
+                self.consecutive_errors = 0
+                return result
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "Too Many Requests" in error_str:
+                    self._rotate_rpc()
+                    time.sleep(1 + attempt * 0.5)
+                elif "timeout" in error_str.lower():
+                    self._rotate_rpc()
+                    time.sleep(0.5)
+                else:
+                    if attempt == max_retries - 1:
+                        raise
+                    time.sleep(0.5)
+        return None
 
     def _init_pools(self):
         """Inisialisasi dan cache alamat pool untuk setiap pair."""
@@ -54,9 +103,10 @@ class ArbitrageScanner:
 
             # Get Uniswap V3 pool
             try:
-                uni_pool = uni_factory.functions.getPool(
-                    tokenA, tokenB, pair["uniswap_fee"]
-                ).call()
+                uni_pool = self._call_with_retry(
+                    lambda tA=tokenA, tB=tokenB, fee=pair["uniswap_fee"]:
+                        uni_factory.functions.getPool(tA, tB, fee).call()
+                )
                 if uni_pool == "0x0000000000000000000000000000000000000000":
                     uni_pool = None
             except Exception as e:
@@ -65,9 +115,10 @@ class ArbitrageScanner:
 
             # Get Aerodrome Slipstream pool
             try:
-                aero_pool = aero_factory.functions.getPool(
-                    tokenA, tokenB, pair["aerodrome_tick_spacing"]
-                ).call()
+                aero_pool = self._call_with_retry(
+                    lambda tA=tokenA, tB=tokenB, ts=pair["aerodrome_tick_spacing"]:
+                        aero_factory.functions.getPool(tA, tB, ts).call()
+                )
                 if aero_pool == "0x0000000000000000000000000000000000000000":
                     aero_pool = None
             except Exception as e:
@@ -86,18 +137,14 @@ class ArbitrageScanner:
             self.logger.log_status(f"  {pair_name}: Uniswap={uni_status} | Aerodrome={aero_status}")
 
     def get_prices_multicall(self):
-        """
-        Mengambil harga (sqrtPriceX96) dari semua pool menggunakan Multicall3.
-        Mengembalikan dict dengan harga per pair per DEX.
-        """
+        """Mengambil harga dari semua pool menggunakan Multicall3."""
         calls = []
-        call_map = []  # Track which call belongs to which pair/dex
+        call_map = []
 
         for pair in PAIRS:
             pair_name = pair["name"]
             pools = self.pool_cache.get(pair_name, {})
 
-            # Uniswap pool slot0
             if pools.get("uniswap"):
                 pool_contract = self.w3.eth.contract(
                     address=Web3.to_checksum_address(pools["uniswap"]),
@@ -107,7 +154,6 @@ class ArbitrageScanner:
                 calls.append((Web3.to_checksum_address(pools["uniswap"]), calldata))
                 call_map.append({"pair": pair_name, "dex": "uniswap", "type": "slot0"})
 
-            # Aerodrome pool slot0
             if pools.get("aerodrome"):
                 pool_contract = self.w3.eth.contract(
                     address=Web3.to_checksum_address(pools["aerodrome"]),
@@ -120,7 +166,6 @@ class ArbitrageScanner:
         if not calls:
             return {}
 
-        # Build Multicall3 aggregate call
         multicall_abi = [
             {
                 "inputs": [
@@ -149,11 +194,17 @@ class ArbitrageScanner:
         )
 
         try:
-            block_number, return_data = multicall.functions.aggregate(
-                [(addr, data) for addr, data in calls]
-            ).call()
+            result = self._call_with_retry(
+                lambda: multicall.functions.aggregate(
+                    [(addr, data) for addr, data in calls]
+                ).call()
+            )
+            if result is None:
+                return {}
+            block_number, return_data = result
         except Exception as e:
             self.logger.log_status(f"[ERROR] Multicall failed: {e}")
+            self.consecutive_errors += 1
             return {}
 
         # Parse results
@@ -168,13 +219,11 @@ class ArbitrageScanner:
 
             try:
                 if dex == "uniswap":
-                    # Uniswap V3 slot0: (sqrtPriceX96, tick, ...)
                     decoded = decode(
                         ["uint160", "int24", "uint16", "uint16", "uint16", "uint8", "bool"],
                         data,
                     )
                 else:
-                    # Aerodrome slot0: (sqrtPriceX96, tick, ...) - no feeProtocol
                     decoded = decode(
                         ["uint160", "int24", "uint16", "uint16", "uint16", "bool"],
                         data,
@@ -194,14 +243,10 @@ class ArbitrageScanner:
         return prices
 
     def _sqrt_price_to_price(self, sqrt_price_x96, pair_name):
-        """
-        Convert sqrtPriceX96 ke harga yang readable.
-        price = (sqrtPriceX96 / 2^96)^2 * 10^(decimals0 - decimals1)
-        """
+        """Convert sqrtPriceX96 ke harga yang readable."""
         if sqrt_price_x96 == 0:
             return 0
 
-        # Find pair config
         pair_config = None
         for p in PAIRS:
             if p["name"] == pair_name:
@@ -214,7 +259,6 @@ class ArbitrageScanner:
         tokenA = pair_config["tokenA"]
         tokenB = pair_config["tokenB"]
 
-        # In Uniswap V3, token0 < token1 (sorted by address)
         if int(tokenA, 16) < int(tokenB, 16):
             decimals0 = TOKEN_DECIMALS.get(tokenA, 18)
             decimals1 = TOKEN_DECIMALS.get(tokenB, 18)
@@ -223,16 +267,12 @@ class ArbitrageScanner:
             decimals1 = TOKEN_DECIMALS.get(tokenA, 18)
 
         price = (sqrt_price_x96 / (2**96)) ** 2
-        # Adjust for decimals
         price = price * (10 ** (decimals0 - decimals1))
 
         return price
 
     def find_opportunities(self, prices):
-        """
-        Analisis harga dan temukan peluang arbitrase.
-        Returns list of opportunities.
-        """
+        """Analisis harga dan temukan peluang arbitrase."""
         opportunities = []
 
         for pair_name, dex_prices in prices.items():
@@ -245,27 +285,16 @@ class ArbitrageScanner:
             if uni_price == 0 or aero_price == 0:
                 continue
 
-            # Calculate price difference percentage
             price_diff_pct = abs(uni_price - aero_price) / min(uni_price, aero_price) * 100
 
-            # Determine direction
             if uni_price > aero_price:
-                # Buy on Aerodrome (cheaper), sell on Uniswap (more expensive)
                 direction = "Aerodrome->Uniswap"
-                buy_price = aero_price
-                sell_price = uni_price
             else:
-                # Buy on Uniswap (cheaper), sell on Aerodrome (more expensive)
                 direction = "Uniswap->Aerodrome"
-                buy_price = uni_price
-                sell_price = aero_price
 
-            # Estimate profit (simplified - actual profit depends on amount and slippage)
-            # For a $20 trade, estimate gross profit
-            estimated_profit_pct = price_diff_pct - 0.1  # Subtract ~0.1% for fees (0.05% each side)
+            estimated_profit_pct = price_diff_pct - 0.1
 
-            # Log scan result
-            is_profitable = estimated_profit_pct > 0.05  # At least 0.05% net profit
+            is_profitable = estimated_profit_pct > 0.05
             self.logger.log_scan(pair_name, price_diff_pct, is_profitable)
 
             if is_profitable:
@@ -280,7 +309,6 @@ class ArbitrageScanner:
                     "aero_sqrtPriceX96": dex_prices["aerodrome"]["sqrtPriceX96"],
                 })
 
-        # Sort by profit potential (highest first)
         opportunities.sort(key=lambda x: x["estimated_profit_pct"], reverse=True)
         return opportunities
 
@@ -292,12 +320,12 @@ class ArbitrageScanner:
         return self.find_opportunities(prices)
 
     def run_continuous(self, callback=None):
-        """
-        Jalankan scanner secara terus-menerus.
-        callback: fungsi yang dipanggil saat ada opportunity (untuk executor).
-        """
-        self.logger.log_status(f"Scanner started. Interval: {SCAN_INTERVAL_MS}ms")
+        """Jalankan scanner secara terus-menerus dengan adaptive interval."""
+        # Use minimum 2 seconds interval to avoid rate limiting on free RPCs
+        effective_interval = max(SCAN_INTERVAL_MS, 2000)
+        self.logger.log_status(f"Scanner started. Interval: {effective_interval}ms (min 2s)")
         self.logger.log_status(f"Monitoring {len(PAIRS)} pairs across Uniswap V3 & Aerodrome")
+        self.logger.log_status(f"RPC endpoints available: {len(RPC_ENDPOINTS)}")
 
         scan_count = 0
         while True:
@@ -309,16 +337,35 @@ class ArbitrageScanner:
                     for opp in opportunities:
                         callback(opp)
 
-                # Sleep between scans
-                time.sleep(SCAN_INTERVAL_MS / 1000.0)
+                # Adaptive sleep
+                if self.consecutive_errors > 0:
+                    sleep_time = min(
+                        effective_interval / 1000.0 * (2 ** self.consecutive_errors),
+                        30.0
+                    )
+                else:
+                    sleep_time = effective_interval / 1000.0 + random.uniform(0, 0.5)
 
-                # Periodic status update every 100 scans
-                if scan_count % 100 == 0:
-                    self.logger.log_status(f"Scan #{scan_count} complete. Block: {self.w3.eth.block_number}")
+                time.sleep(sleep_time)
+
+                # Periodic status every 50 scans
+                if scan_count % 50 == 0:
+                    try:
+                        block = self._call_with_retry(lambda: self.w3.eth.block_number)
+                        self.logger.log_status(
+                            f"Scan #{scan_count} complete. Block: {block} | "
+                            f"RPC: {RPC_ENDPOINTS[self.rpc_index][:30]}..."
+                        )
+                    except Exception:
+                        self.logger.log_status(f"Scan #{scan_count} complete.")
 
             except KeyboardInterrupt:
                 self.logger.log_status("Scanner stopped by user.")
                 break
             except Exception as e:
+                self.consecutive_errors += 1
                 self.logger.log_status(f"[ERROR] Scanner error: {e}")
-                time.sleep(5)  # Wait 5s before retry on error
+                if self.consecutive_errors >= self.max_consecutive_errors:
+                    self._rotate_rpc()
+                    self.consecutive_errors = 0
+                time.sleep(5)

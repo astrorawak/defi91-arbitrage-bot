@@ -72,9 +72,9 @@ PAIRS = [
 ]
 
 # ============ BOT PARAMETERS ============
-MIN_PROFIT_USD = float(os.environ.get("MIN_PROFIT_USD", "0.50"))  # Minimum profit in USD
+MIN_PROFIT_USD = float(os.environ.get("MIN_PROFIT_USD", "0.10"))  # Minimum profit in USD (lowered for small capital)
 MAX_GAS_GWEI = float(os.environ.get("MAX_GAS_GWEI", "0.5"))      # Max gas price (Base is cheap)
-SCAN_INTERVAL_MS = int(os.environ.get("SCAN_INTERVAL_MS", "500"))  # Scan every 500ms
+SCAN_INTERVAL_MS = int(os.environ.get("SCAN_INTERVAL_MS", "2000"))  # Scan every 2s (avoid rate limits)
 PRIORITY_FEE_GWEI = float(os.environ.get("PRIORITY_FEE_GWEI", "0.01"))  # Priority fee
 
 # Slippage tolerance (0.5% = 50 basis points)
