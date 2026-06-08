@@ -13,7 +13,7 @@ BASE_WSS_URL = os.environ.get("BASE_WSS_URL", "")  # WebSocket for real-time blo
 
 # ============ WALLET ============
 PRIVATE_KEY = os.environ.get("PRIVATE_KEY", "")
-ARBITRAGE_CONTRACT = os.environ.get("ARBITRAGE_CONTRACT", "")
+ARBITRAGE_CONTRACT = os.environ.get("ARBITRAGE_CONTRACT", "0xc342ee4efeaaeb76b37d6911f755397aaeca41e9")
 
 # ============ DEX ROUTERS ============
 UNISWAP_V3_ROUTER = "0x2626664c2603336E57B271c5C0b26F421741e481"
